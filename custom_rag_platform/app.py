@@ -3,7 +3,7 @@ import os
 import pdfplumber
 import requests
 import json
-from pinecone import Pinecone, ServerlessSpec
+import pinecone
 import random
 
 # --- Flask Setup ---
