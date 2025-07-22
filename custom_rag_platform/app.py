@@ -1,10 +1,8 @@
-from flask import Flask, request, render_template, jsonify, session, redirect
+from flask import Flask, request, render_template, jsonify, session, redirect 
 import os
 import pdfplumber
 import requests
 import json
-import pinecone
-
 import random
 
 # --- Flask Setup ---
@@ -13,17 +11,17 @@ app.secret_key = "super-secret-key"
 app.config['UPLOAD_FOLDER'] = 'uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-pinecone.init(
-    api_key="pcsk_2CCJh1_KBatSJodZV1MYdVvYokH4WpHfi2BHiSKXCHhSz76XWiwi64Qvau7SWZx6JxJEqJ",
-    environment="us-east-1-aws"
-)
-index_name = "rag"
+# --- Qdrant Setup ---
+QDRANT_URL = "http://20.244.96.62:6333"
+QDRANT_COLLECTION = "interview"
 
-if index_name not in pinecone.list_indexes():
-    pinecone.create_index(name=index_name, dimension=1024, metric="cosine")
-
-pinecone_index = pinecone.Index(index_name)
-
+# Ensure collection exists
+requests.put(f"{QDRANT_URL}/collections/{QDRANT_COLLECTION}", json={
+    "vectors": {
+        "size": 1024,
+        "distance": "Cosine"
+    }
+})
 
 # --- Ollama Setup ---
 OLLAMA_BASE_URL = "https://ai.thecodehub.digital"
@@ -75,6 +73,23 @@ def embed_text(text):
     except Exception as e:
         return [0.0] * 1024
 
+def search_qdrant(vector):
+    res = requests.post(f"{QDRANT_URL}/collections/{QDRANT_COLLECTION}/points/search", json={
+        "vector": vector,
+        "top": 5,
+        "with_payload": True
+    })
+    return res.json().get("result", [])
+
+def upsert_qdrant(id, vector, payload):
+    requests.put(f"{QDRANT_URL}/collections/{QDRANT_COLLECTION}/points", json={
+        "points": [{
+            "id": id,
+            "vector": vector,
+            "payload": payload
+        }]
+    })
+
 def extract_skills_with_ollama(resume_text, job_title):
     prompt = f"""
     Analyze this resume and extract the candidate's key technical skills.
@@ -104,8 +119,8 @@ def extract_skills_with_ollama(resume_text, job_title):
 
 def generate_question_from_skill(skill):
     embed = embed_text(skill)
-    pinecone_results = pinecone_index.query(vector=embed, top_k=5, include_metadata=True, namespace="interview")
-    context_chunks = [m['metadata']['text'] for m in pinecone_results['matches'] if 'text' in m['metadata']]
+    results = search_qdrant(embed)
+    context_chunks = [m['payload']['text'] for m in results if 'text' in m['payload']]
     context_text = "\n\n".join(context_chunks)
 
     prompt = f"""
@@ -143,7 +158,7 @@ def evaluate_answer(answer_text):
 def calculate_summary_score(transcript):
     if not transcript:
         return {"avg_score": 0, "ai_count": 0, "human_count": 0}
-    
+
     total_score = 0
     ai_like = 0
     human_like = 0
@@ -178,14 +193,7 @@ def upload_resume():
         text = open(filepath, 'r', encoding='utf-8').read()
 
     embedding = embed_text(text)
-    pinecone_index.upsert(
-        vectors=[{
-            "id": file.filename,
-            "values": embedding,
-            "metadata": {"text": text, "source": "resume", "job_title": job_title}
-        }],
-        namespace="interview"
-    )
+    upsert_qdrant(file.filename, embedding, {"text": text, "source": "resume", "job_title": job_title})
 
     extracted_skills = extract_skills_with_ollama(text, job_title)
     session['skills'] = extracted_skills
@@ -256,14 +264,7 @@ def admin_panel():
     if request.method == 'POST':
         skill = request.form['skill']
         question = request.form['question']
-        pinecone_index.upsert(
-            vectors=[{
-                "id": f"{skill}-{random.randint(1000,9999)}",
-                "values": embed_text(question),
-                "metadata": {"text": question, "source": "admin-upload"}
-            }],
-            namespace="interview"
-        )
+        upsert_qdrant(f"{skill}-{random.randint(1000,9999)}", embed_text(question), {"text": question, "source": "admin-upload"})
         return redirect('/admin')
 
     return '''
