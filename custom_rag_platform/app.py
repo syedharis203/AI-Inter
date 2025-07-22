@@ -22,11 +22,14 @@ try:
     index_name = "rag"
 
     if index_name not in pinecone.list_indexes():
-        print(f"[INFO] Creating Pinecone index '{index_name}' with 1024 dimensions.")
-        pinecone.create_index(name=index_name, dimension=1024, metric="cosine")
+    pinecone.create_index(
+        name=index_name,
+        dimension=1024,
+        metric="cosine"
+    )
 
+    # Connect to the index
     pinecone_index = pinecone.Index(index_name)
-    print(f"[INFO] Pinecone index '{index_name}' initialized.")
 
 except Exception as e:
     print(f"[WARNING] Pinecone initialization failed: {e}")
@@ -186,6 +189,7 @@ def upload_resume():
         text = open(filepath, 'r', encoding='utf-8').read()
 
     embedding = embed_text(text)
+    if pinecone_index:
     pinecone_index.upsert(
         vectors=[{
             "id": file.filename,
@@ -194,6 +198,7 @@ def upload_resume():
         }],
         namespace="interview"
     )
+
 
     extracted_skills = extract_skills_with_ollama(text, job_title)
     session['skills'] = extracted_skills
