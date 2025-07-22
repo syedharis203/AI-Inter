@@ -13,17 +13,21 @@ app.config['UPLOAD_FOLDER'] = 'uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # --- Pinecone Setup ---
+pinecone_index = None
+try:
 pinecone.init(api_key="pcsk_2CCJh1_KBatSJodZV1MYdVvYokH4WpHfi2BHiSKXCHhSz76XWiwi64Qvau7SWZx6JxJEqJ", environment="us-east-1-aws")
 index_name = "rag"
-pinecone_index = None
 
-try:
+
     if index_name not in pinecone.list_indexes():
-        print(f"[INFO] Creating Pinecone index '{index_name}' with 1024-dim cosine config...")
+        print(f"[INFO] Creating Pinecone index '{index_name}' with 1024 dimensions.")
         pinecone.create_index(name=index_name, dimension=1024, metric="cosine")
+
     pinecone_index = pinecone.Index(index_name)
+    print(f"[INFO] Pinecone index '{index_name}' initialized.")
+
 except Exception as e:
-    print(f"[WARNING] Pinecone index setup failed: {str(e)}")
+    print(f"[WARNING] Pinecone initialization failed: {e}")
     pinecone_index = None
 
 # --- Ollama Setup ---
@@ -31,7 +35,7 @@ OLLAMA_BASE_URL = "https://ai.thecodehub.digital"
 OLLAMA_EMBED_MODEL = "bge-m3:latest"
 OLLAMA_CHAT_MODEL = "mistral-small3.1:latest"
 
-# --- Helper Functions ---
+# --- Helpers ---
 def extract_text_from_pdf(path):
     text = ""
     with pdfplumber.open(path) as pdf:
@@ -41,7 +45,7 @@ def extract_text_from_pdf(path):
                 if page_text:
                     text += page_text + "\n"
             except Exception as e:
-                print(f"PDF parse warning on page {page.page_number}:", e)
+                print(f"[PDF warning] page {page.page_number}:", e)
     return text
 
 def ollama_chat(prompt):
@@ -51,7 +55,6 @@ def ollama_chat(prompt):
             json={"model": OLLAMA_CHAT_MODEL, "messages": [{"role": "user", "content": prompt}]},
             stream=True
         )
-
         full_response = ""
         for line in res.iter_lines():
             if line:
@@ -61,7 +64,6 @@ def ollama_chat(prompt):
                         full_response += data["message"]["content"]
                 except json.JSONDecodeError:
                     continue
-
         return full_response.strip() or "[Ollama chat error: Empty response]"
     except Exception as e:
         return f"[Ollama chat error: {str(e)}]"
@@ -74,6 +76,7 @@ def embed_text(text):
         )
         return res.json()['embedding']
     except Exception as e:
+        print(f"[Embedding error] {e}")
         return [0.0] * 1024
 
 def extract_skills_with_ollama(resume_text, job_title):
@@ -105,9 +108,15 @@ def extract_skills_with_ollama(resume_text, job_title):
 
 def generate_question_from_skill(skill):
     embed = embed_text(skill)
-    pinecone_results = pinecone_index.query(vector=embed, top_k=5, include_metadata=True, namespace="interview")
-    context_chunks = [m['metadata']['text'] for m in pinecone_results['matches'] if 'text' in m['metadata']]
-    context_text = "\n\n".join(context_chunks)
+    context_text = ""
+
+    if pinecone_index:
+        try:
+            pinecone_results = pinecone_index.query(vector=embed, top_k=5, include_metadata=True, namespace="interview")
+            context_chunks = [m['metadata']['text'] for m in pinecone_results['matches'] if 'text' in m['metadata']]
+            context_text = "\n\n".join(context_chunks)
+        except Exception as e:
+            print(f"[Pinecone query error] {e}")
 
     prompt = f"""
 You're an AI interviewer. Ask a single friendly and relevant technical question based on the candidate's experience with {skill}.
@@ -144,7 +153,7 @@ def evaluate_answer(answer_text):
 def calculate_summary_score(transcript):
     if not transcript:
         return {"avg_score": 0, "ai_count": 0, "human_count": 0}
-
+    
     total_score = 0
     ai_like = 0
     human_like = 0
@@ -179,14 +188,21 @@ def upload_resume():
         text = open(filepath, 'r', encoding='utf-8').read()
 
     embedding = embed_text(text)
-    pinecone_index.upsert(
-        vectors=[{
-            "id": file.filename,
-            "values": embedding,
-            "metadata": {"text": text, "source": "resume", "job_title": job_title}
-        }],
-        namespace="interview"
-    )
+
+    if pinecone_index:
+        try:
+            pinecone_index.upsert(
+                vectors=[{
+                    "id": file.filename,
+                    "values": embedding,
+                    "metadata": {"text": text, "source": "resume", "job_title": job_title}
+                }],
+                namespace="interview"
+            )
+        except Exception as e:
+            print(f"[Pinecone upsert error] {e}")
+    else:
+        print("[INFO] Pinecone index not initialized. Skipping upsert.")
 
     extracted_skills = extract_skills_with_ollama(text, job_title)
     session['skills'] = extracted_skills
@@ -224,12 +240,20 @@ def next_question():
 
     if question_count >= 5:
         summary = calculate_summary_score(session.get('transcript', []))
-        return jsonify({"done": True, "message": "Thanks for taking the interview!", "summary": summary})
+        return jsonify({
+            "done": True,
+            "message": "Thanks for taking the interview!",
+            "summary": summary
+        })
 
     flat_skills = [(cat, skill) for cat, lst in skill_dict.items() for skill in lst if skill not in asked_skills]
     if not flat_skills:
         summary = calculate_summary_score(session.get('transcript', []))
-        return jsonify({"done": True, "message": "Thanks for taking the interview!", "summary": summary})
+        return jsonify({
+            "done": True,
+            "message": "Thanks for taking the interview!",
+            "summary": summary
+        })
 
     cat, next_skill = random.choice(flat_skills)
     asked_skills.append(next_skill)
@@ -238,21 +262,29 @@ def next_question():
     session['last_question'] = q
     session['question_count'] = question_count + 1
 
-    return jsonify({"done": False, "question": q, "evaluation": evaluation})
+    return jsonify({
+        "done": False,
+        "question": q,
+        "evaluation": evaluation
+    })
 
 @app.route('/admin', methods=['GET', 'POST'])
 def admin_panel():
     if request.method == 'POST':
         skill = request.form['skill']
         question = request.form['question']
-        pinecone_index.upsert(
-            vectors=[{
-                "id": f"{skill}-{random.randint(1000,9999)}",
-                "values": embed_text(question),
-                "metadata": {"text": question, "source": "admin-upload"}
-            }],
-            namespace="interview"
-        )
+        if pinecone_index:
+            try:
+                pinecone_index.upsert(
+                    vectors=[{
+                        "id": f"{skill}-{random.randint(1000,9999)}",
+                        "values": embed_text(question),
+                        "metadata": {"text": question, "source": "admin-upload"}
+                    }],
+                    namespace="interview"
+                )
+            except Exception as e:
+                print(f"[Admin Pinecone upsert error] {e}")
         return redirect('/admin')
 
     return '''
