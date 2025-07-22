@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template, jsonify, session, redirect 
+from flask import Flask, request, render_template, jsonify, session, redirect
 import os
 import pdfplumber
 import requests
@@ -13,15 +13,7 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # --- Qdrant Setup ---
 QDRANT_URL = "http://20.244.96.62:6333"
-QDRANT_COLLECTION = "interview"
-
-# Ensure collection exists
-requests.put(f"{QDRANT_URL}/collections/{QDRANT_COLLECTION}", json={
-    "vectors": {
-        "size": 1024,
-        "distance": "Cosine"
-    }
-})
+COLLECTION_NAME = "rag"
 
 # --- Ollama Setup ---
 OLLAMA_BASE_URL = "https://ai.thecodehub.digital"
@@ -73,22 +65,24 @@ def embed_text(text):
     except Exception as e:
         return [0.0] * 1024
 
-def search_qdrant(vector):
-    res = requests.post(f"{QDRANT_URL}/collections/{QDRANT_COLLECTION}/points/search", json={
-        "vector": vector,
-        "top": 5,
-        "with_payload": True
-    })
-    return res.json().get("result", [])
-
-def upsert_qdrant(id, vector, payload):
-    requests.put(f"{QDRANT_URL}/collections/{QDRANT_COLLECTION}/points", json={
+def qdrant_upsert(id, embedding, metadata):
+    payload = {
         "points": [{
             "id": id,
-            "vector": vector,
-            "payload": payload
+            "vector": embedding,
+            "payload": metadata
         }]
-    })
+    }
+    requests.put(f"{QDRANT_URL}/collections/{COLLECTION_NAME}/points", json=payload)
+
+def qdrant_query(vector, top_k=5):
+    payload = {
+        "vector": vector,
+        "top": top_k,
+        "with_payload": True
+    }
+    res = requests.post(f"{QDRANT_URL}/collections/{COLLECTION_NAME}/points/search", json=payload)
+    return res.json().get("result", [])
 
 def extract_skills_with_ollama(resume_text, job_title):
     prompt = f"""
@@ -119,8 +113,8 @@ def extract_skills_with_ollama(resume_text, job_title):
 
 def generate_question_from_skill(skill):
     embed = embed_text(skill)
-    results = search_qdrant(embed)
-    context_chunks = [m['payload']['text'] for m in results if 'text' in m['payload']]
+    qdrant_results = qdrant_query(embed)
+    context_chunks = [m['payload']['text'] for m in qdrant_results if 'text' in m['payload']]
     context_text = "\n\n".join(context_chunks)
 
     prompt = f"""
@@ -193,7 +187,11 @@ def upload_resume():
         text = open(filepath, 'r', encoding='utf-8').read()
 
     embedding = embed_text(text)
-    upsert_qdrant(file.filename, embedding, {"text": text, "source": "resume", "job_title": job_title})
+    qdrant_upsert(
+        id=file.filename,
+        embedding=embedding,
+        metadata={"text": text, "source": "resume", "job_title": job_title}
+    )
 
     extracted_skills = extract_skills_with_ollama(text, job_title)
     session['skills'] = extracted_skills
@@ -264,7 +262,11 @@ def admin_panel():
     if request.method == 'POST':
         skill = request.form['skill']
         question = request.form['question']
-        upsert_qdrant(f"{skill}-{random.randint(1000,9999)}", embed_text(question), {"text": question, "source": "admin-upload"})
+        qdrant_upsert(
+            id=f"{skill}-{random.randint(1000,9999)}",
+            embedding=embed_text(question),
+            metadata={"text": question, "source": "admin-upload"}
+        )
         return redirect('/admin')
 
     return '''
