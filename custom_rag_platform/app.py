@@ -22,11 +22,11 @@ try:
     index_name = "rag"
 
     if index_name not in pinecone.list_indexes():
-    pinecone.create_index(
-        name=index_name,
-        dimension=1024,
-        metric="cosine"
-    )
+        pinecone.create_index(
+            name=index_name,
+            dimension=1024,
+            metric="cosine"
+        )
 
     # Connect to the index
     pinecone_index = pinecone.Index(index_name)
@@ -39,7 +39,6 @@ except Exception as e:
 OLLAMA_BASE_URL = "https://ai.thecodehub.digital"
 OLLAMA_EMBED_MODEL = "bge-m3:latest"
 OLLAMA_CHAT_MODEL = "mistral-small3.1:latest"
-
 
 # --- Helper Functions ---
 def extract_text_from_pdf(path):
@@ -190,15 +189,14 @@ def upload_resume():
 
     embedding = embed_text(text)
     if pinecone_index:
-    pinecone_index.upsert(
-        vectors=[{
-            "id": file.filename,
-            "values": embedding,
-            "metadata": {"text": text, "source": "resume", "job_title": job_title}
-        }],
-        namespace="interview"
-    )
-
+        pinecone_index.upsert(
+            vectors=[{
+                "id": file.filename,
+                "values": embedding,
+                "metadata": {"text": text, "source": "resume", "job_title": job_title}
+            }],
+            namespace="interview"
+        )
 
     extracted_skills = extract_skills_with_ollama(text, job_title)
     session['skills'] = extracted_skills
@@ -291,3 +289,4 @@ def admin_panel():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
