@@ -15,9 +15,11 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 # --- Pinecone Setup ---
 pinecone_index = None
 try:
-   pinecone.init(api_key="pcsk_2CCJh1_KBatSJodZV1MYdVvYokH4WpHfi2BHiSKXCHhSz76XWiwi64Qvau7SWZx6JxJEqJ", environment="us-east-1-aws")
-   index_name = "rag"
-
+    pinecone.init(
+        api_key="pcsk_2CCJh1_KBatSJodZV1MYdVvYokH4WpHfi2BHiSKXCHhSz76XWiwi64Qvau7SWZx6JxJEqJ",
+        environment="us-east-1-aws"
+    )
+    index_name = "rag"
 
     if index_name not in pinecone.list_indexes():
         print(f"[INFO] Creating Pinecone index '{index_name}' with 1024 dimensions.")
@@ -112,7 +114,9 @@ def generate_question_from_skill(skill):
 
     if pinecone_index:
         try:
-            pinecone_results = pinecone_index.query(vector=embed, top_k=5, include_metadata=True, namespace="interview")
+            pinecone_results = pinecone_index.query(
+                vector=embed, top_k=5, include_metadata=True, namespace="interview"
+            )
             context_chunks = [m['metadata']['text'] for m in pinecone_results['matches'] if 'text' in m['metadata']]
             context_text = "\n\n".join(context_chunks)
         except Exception as e:
@@ -153,7 +157,7 @@ def evaluate_answer(answer_text):
 def calculate_summary_score(transcript):
     if not transcript:
         return {"avg_score": 0, "ai_count": 0, "human_count": 0}
-    
+
     total_score = 0
     ai_like = 0
     human_like = 0
