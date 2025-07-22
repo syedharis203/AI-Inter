@@ -1,9 +1,10 @@
 services:
   - type: web
-    name: custom-gpt-platform
+    name: custom-rag-platform
     env: python
-    buildCommand: "pip install -r apps/requirements.txt"
-    startCommand: "python apps/app.py"
+    rootDir: app
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn app:app"
     envVars:
       - key: FLASK_ENV
         value: production
