@@ -1,9 +1,0 @@
-services:
-  - type: web
-    name: custom-rag-platform
-    env: python
-    buildCommand: "pip install -r apps/requirements.txt"
-    startCommand: "python apps/app.py"
-    envVars:
-      - key: FLASK_ENV
-        value: production
