@@ -24,7 +24,7 @@ try:
     pinecone_index = pinecone.Index(index_name)
 except Exception as e:
     print(f"[WARNING] Pinecone index setup failed: {str(e)}")
-    pinecone_index = Non
+    pinecone_index = None
 
 # --- Ollama Setup ---
 OLLAMA_BASE_URL = "https://ai.thecodehub.digital"
