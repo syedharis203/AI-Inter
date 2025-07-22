@@ -14,7 +14,7 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # --- Pinecone Setup ---
 pinecone.init(
-    api_key="pcsk_dH9vJ_3JrrNAHeGANYsmWDtv6gy6nXWkCuHBRh2dRXFs7ewn31ifjDYtnWWqzHaGkGwyW",
+    api_key="pcsk_6HAiWr_9wz26v7gkucLL4q2g7JXPttN6nU86YstzRvsAySVNeTBdxJjpTRPBL174F9ixwP",
     environment="us-east-1-aws"  # replace with your Pinecone environment
 )
 
