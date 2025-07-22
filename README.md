@@ -51,7 +51,7 @@ pinecone-client
 
 
 Set Your API Keys (Already Done in app.py)
-No extra config is required — the app.py is already pre-configured to use:
+No extra config is required the app.py is already pre-configured to use:
 
 Ollama API at https://ai.thecodehub.digital
 
@@ -63,9 +63,9 @@ python app.py
 Then go to: http://127.0.0.1:5000/
 
 Please Note
-The response speed may be slow (~1–2 minutes) after resume upload — this is expected because the system uses a local LLM server and vector embedding process.
+The response speed may be slow (1–2 minutes) after resume upload this is expected because the system uses a local LLM server and vector embedding process.
 
-Be patient during initial parsing — once complete, the chat interface will load automatically.
+Be patient during initial parsing  once complete, the chat interface will load automatically.
 
 You’ll be asked 1 HR question and 5 technical questions, then the interview ends.
 
