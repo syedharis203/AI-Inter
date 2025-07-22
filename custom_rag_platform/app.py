@@ -13,15 +13,18 @@ app.config['UPLOAD_FOLDER'] = 'uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # --- Pinecone Setup ---
-pinecone.init(api_key="pcsk_dH9vJ_3JrrNAHeGANYsmWDtv6gy6nXWkCuHBRh2dRXFs7ewn31ifjDYtnWWqzHaGkGwyW", environment="us-east-1-aws")
-
+pinecone.init(api_key="pcsk_2CCJh1_KBatSJodZV1MYdVvYokH4WpHfi2BHiSKXCHhSz76XWiwi64Qvau7SWZx6JxJEqJ", environment="us-east-1-aws")
 index_name = "rag"
+pinecone_index = None
 
-# ✅ Ensure index exists — raise error if not
-if index_name not in pinecone.list_indexes():
-    raise Exception(f"Pinecone index '{index_name}' not found. Please create it manually in the Pinecone console.")
-
-pinecone_index = pinecone.Index(index_name)
+try:
+    if index_name not in pinecone.list_indexes():
+        print(f"[INFO] Creating Pinecone index '{index_name}' with 1024-dim cosine config...")
+        pinecone.create_index(name=index_name, dimension=1024, metric="cosine")
+    pinecone_index = pinecone.Index(index_name)
+except Exception as e:
+    print(f"[WARNING] Pinecone index setup failed: {str(e)}")
+    pinecone_index = Non
 
 # --- Ollama Setup ---
 OLLAMA_BASE_URL = "https://ai.thecodehub.digital"
