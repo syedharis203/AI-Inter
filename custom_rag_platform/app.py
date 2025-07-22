@@ -3,7 +3,7 @@ import os
 import pdfplumber
 import requests
 import json
-from pinecone import Pinecone, ServerlessSpec
+import Pinecone
 import random
 
 # --- Flask Setup ---
@@ -12,18 +12,17 @@ app.secret_key = "super-secret-key"
 app.config['UPLOAD_FOLDER'] = 'uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-# --- Pinecone Setup ---
-pc = Pinecone(api_key="pcsk_dH9vJ_3JrrNAHeGANYsmWDtv6gy6nXWkCuHBRh2dRXFs7ewn31ifjDYtnWWqzHaGkGwyW")
+pinecone.init(
+    api_key="pcsk_2CCJh1_KBatSJodZV1MYdVvYokH4WpHfi2BHiSKXCHhSz76XWiwi64Qvau7SWZx6JxJEqJ",
+    environment="us-east-1-aws"
+)
 index_name = "rag"
 
-if index_name not in pc.list_indexes().names():
-    pc.create_index(
-        name=index_name,
-        dimension=1024,
-        metric="cosine",
-        spec=ServerlessSpec(cloud="aws", region="us-east-1")
-    )
-pinecone_index = pc.Index(index_name)
+if index_name not in pinecone.list_indexes():
+    pinecone.create_index(name=index_name, dimension=1024, metric="cosine")
+
+pinecone_index = pinecone.Index(index_name)
+
 
 # --- Ollama Setup ---
 OLLAMA_BASE_URL = "https://ai.thecodehub.digital"
