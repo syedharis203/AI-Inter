@@ -3,7 +3,8 @@ import os
 import pdfplumber
 import requests
 import json
-import Pinecone
+import pinecone
+
 import random
 
 # --- Flask Setup ---
