@@ -3,8 +3,8 @@ import os
 import pdfplumber
 import requests
 import json
-import random
 import pinecone
+import random
 
 # --- Flask Setup ---
 app = Flask(__name__)
@@ -12,20 +12,17 @@ app.secret_key = "super-secret-key"
 app.config['UPLOAD_FOLDER'] = 'uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-
-
+# --- Pinecone Setup ---
 pinecone.init(
     api_key="pcsk_dH9vJ_3JrrNAHeGANYsmWDtv6gy6nXWkCuHBRh2dRXFs7ewn31ifjDYtnWWqzHaGkGwyW",
-    environment="us-east-1-gcp"  # adjust if your project uses a different environment
+    environment="us-east-1-aws"  # replace with your Pinecone environment
 )
 
 index_name = "rag"
-
 if index_name not in pinecone.list_indexes():
     pinecone.create_index(name=index_name, dimension=1024, metric="cosine")
 
 pinecone_index = pinecone.Index(index_name)
-
 
 # --- Ollama Setup ---
 OLLAMA_BASE_URL = "https://ai.thecodehub.digital"
@@ -145,7 +142,7 @@ def evaluate_answer(answer_text):
 def calculate_summary_score(transcript):
     if not transcript:
         return {"avg_score": 0, "ai_count": 0, "human_count": 0}
-    
+
     total_score = 0
     ai_like = 0
     human_like = 0
@@ -225,20 +222,12 @@ def next_question():
 
     if question_count >= 5:
         summary = calculate_summary_score(session.get('transcript', []))
-        return jsonify({
-            "done": True,
-            "message": "Thanks for taking the interview!",
-            "summary": summary
-        })
+        return jsonify({"done": True, "message": "Thanks for taking the interview!", "summary": summary})
 
     flat_skills = [(cat, skill) for cat, lst in skill_dict.items() for skill in lst if skill not in asked_skills]
     if not flat_skills:
         summary = calculate_summary_score(session.get('transcript', []))
-        return jsonify({
-            "done": True,
-            "message": "Thanks for taking the interview!",
-            "summary": summary
-        })
+        return jsonify({"done": True, "message": "Thanks for taking the interview!", "summary": summary})
 
     cat, next_skill = random.choice(flat_skills)
     asked_skills.append(next_skill)
@@ -247,11 +236,7 @@ def next_question():
     session['last_question'] = q
     session['question_count'] = question_count + 1
 
-    return jsonify({
-        "done": False,
-        "question": q,
-        "evaluation": evaluation
-    })
+    return jsonify({"done": False, "question": q, "evaluation": evaluation})
 
 @app.route('/admin', methods=['GET', 'POST'])
 def admin_panel():
