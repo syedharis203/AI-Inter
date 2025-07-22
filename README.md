@@ -53,7 +53,7 @@ pinecone-client
 Set Your API Keys (Already Done in app.py)
 No extra config is required the app.py is already pre-configured to use:
 
-Ollama API at https://ai.thecodehub.digital
+
 
 Pinecone index named rag with dimension 1024 and namespace interview
 
