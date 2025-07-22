@@ -3,7 +3,7 @@ import os
 import pdfplumber
 import requests
 import json
-import pinecone
+from pinecone import Pinecone, ServerlessSpec
 import random
 
 # --- Flask Setup ---
@@ -13,27 +13,17 @@ app.config['UPLOAD_FOLDER'] = 'uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # --- Pinecone Setup ---
-pinecone_index = None
-try:
-    pinecone.init(
-        api_key="pcsk_2CCJh1_KBatSJodZV1MYdVvYokH4WpHfi2BHiSKXCHhSz76XWiwi64Qvau7SWZx6JxJEqJ",
-        environment="us-east-1-aws"
+pc = Pinecone(api_key="pcsk_dH9vJ_3JrrNAHeGANYsmWDtv6gy6nXWkCuHBRh2dRXFs7ewn31ifjDYtnWWqzHaGkGwyW")
+index_name = "rag"
+
+if index_name not in pc.list_indexes().names():
+    pc.create_index(
+        name=index_name,
+        dimension=1024,
+        metric="cosine",
+        spec=ServerlessSpec(cloud="aws", region="us-east-1")
     )
-    index_name = "rag"
-
-    if index_name not in pinecone.list_indexes():
-        pinecone.create_index(
-            name=index_name,
-            dimension=1024,
-            metric="cosine"
-        )
-
-    # Connect to the index
-    pinecone_index = pinecone.Index(index_name)
-
-except Exception as e:
-    print(f"[WARNING] Pinecone initialization failed: {e}")
-    pinecone_index = None
+pinecone_index = pc.Index(index_name)
 
 # --- Ollama Setup ---
 OLLAMA_BASE_URL = "https://ai.thecodehub.digital"
@@ -188,15 +178,14 @@ def upload_resume():
         text = open(filepath, 'r', encoding='utf-8').read()
 
     embedding = embed_text(text)
-    if pinecone_index:
-        pinecone_index.upsert(
-            vectors=[{
-                "id": file.filename,
-                "values": embedding,
-                "metadata": {"text": text, "source": "resume", "job_title": job_title}
-            }],
-            namespace="interview"
-        )
+    pinecone_index.upsert(
+        vectors=[{
+            "id": file.filename,
+            "values": embedding,
+            "metadata": {"text": text, "source": "resume", "job_title": job_title}
+        }],
+        namespace="interview"
+    )
 
     extracted_skills = extract_skills_with_ollama(text, job_title)
     session['skills'] = extracted_skills
