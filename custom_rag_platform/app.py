@@ -15,8 +15,8 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 # --- Pinecone Setup ---
 pinecone_index = None
 try:
-pinecone.init(api_key="pcsk_2CCJh1_KBatSJodZV1MYdVvYokH4WpHfi2BHiSKXCHhSz76XWiwi64Qvau7SWZx6JxJEqJ", environment="us-east-1-aws")
-index_name = "rag"
+   pinecone.init(api_key="pcsk_2CCJh1_KBatSJodZV1MYdVvYokH4WpHfi2BHiSKXCHhSz76XWiwi64Qvau7SWZx6JxJEqJ", environment="us-east-1-aws")
+   index_name = "rag"
 
 
     if index_name not in pinecone.list_indexes():
