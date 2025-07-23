@@ -4,8 +4,9 @@ import uuid
 import pdfplumber
 import requests
 import json
-from pinecone import Pinecone, ServerlessSpec
 import random
+from pinecone import Pinecone, ServerlessSpec
+import google.generativeai as genai
 
 # --- Flask Setup ---
 app = Flask(__name__)
@@ -14,23 +15,19 @@ app.config['UPLOAD_FOLDER'] = 'uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # --- Pinecone Setup ---
-pc = Pinecone(api_key="pcsk_dH9vJ_3JrrNAHeGANYsmWDtv6gy6nXWkCuHBRh2dRXFs7ewn31ifjDYtnWWqzHaGkGwyW")
-index_name = "rag"
-
+pc = Pinecone(api_key="pcsk_dH9vJ_3JrrNAHeGANYsmWDtv6gy6nXWkCuHBRh2dRXFs7ewn31ifjDYtnWWqzHaGkGwyW")  # Replace with actual
+index_name = "reg"
 if index_name not in pc.list_indexes().names():
     pc.create_index(
         name=index_name,
-        dimension=1024,
+        dimension=768,  # Corrected to match Gemini embeddings
         metric="cosine",
         spec=ServerlessSpec(cloud="aws", region="us-east-1")
     )
 pinecone_index = pc.Index(index_name)
 
-# --- Ollama Setup ---
-OLLAMA_BASE_URL = "https://ai.thecodehub.digital"
-OLLAMA_EMBED_MODEL = "bge-m3:latest"
-OLLAMA_CHAT_MODEL = "mistral-small3.1:latest"
-
+# --- Gemini Setup ---
+genai.configure(api_key="AIzaSyCpQvZUGclZCnL18Wh0fz_mqQDT6-_CBLE")
 # --- Helper Functions ---
 def extract_text_from_pdf(path):
     text = ""
@@ -45,35 +42,28 @@ def extract_text_from_pdf(path):
     return text
 
 def ollama_chat(prompt):
-    try:
-        res = requests.post(
-            f"{OLLAMA_BASE_URL}/api/chat",
-            json={"model": OLLAMA_CHAT_MODEL, "messages": [{"role": "user", "content": prompt}]},
-            stream=True
-        )
-        full_response = ""
-        for line in res.iter_lines():
-            if line:
-                try:
-                    data = json.loads(line.decode("utf-8"))
-                    if "message" in data and "content" in data["message"]:
-                        full_response += data["message"]["content"]
-                except json.JSONDecodeError:
-                    continue
-        return full_response.strip() or "[Ollama chat error: Empty response]"
-    except Exception as e:
-        return f"[Ollama chat error: {str(e)}]"
+    model = genai.GenerativeModel("models/gemini-2.0-flash-exp")
+    chat = model.start_chat(history=[])
+    response = chat.send_message(prompt)
+    return response.text.strip()
 
 def embed_text(text):
     try:
-        res = requests.post(
-            f"{OLLAMA_BASE_URL}/api/embeddings",
-            json={"model": OLLAMA_EMBED_MODEL, "prompt": text}
+        # Corrected line: Call embed_content directly from genai
+        response = genai.embed_content(
+            model="models/text-embedding-004", # Specify the model here
+            content=text,
+            task_type="RETRIEVAL_DOCUMENT"
         )
-        return res.json()['embedding']
+        embedding = response["embedding"]
+        if not any(embedding):
+            print("⚠️ Skipping zero vector embedding.")
+            return None
+        return embedding
     except Exception as e:
-        return [0.0] * 1024
-        
+        print("Embedding error:", str(e))
+        return None
+    
 def extract_skills_with_ollama(resume_text, job_title):
     prompt = f"""
     Analyze this resume and extract the candidate's key technical skills.
@@ -94,7 +84,7 @@ def extract_skills_with_ollama(resume_text, job_title):
     """
     try:
         response = ollama_chat(prompt)
-        cleaned = response.strip().strip("` ")
+        cleaned = response.strip().strip(" ")
         if cleaned.startswith("json"):
             cleaned = cleaned.replace("json", "").strip()
         return json.loads(cleaned)
@@ -103,6 +93,8 @@ def extract_skills_with_ollama(resume_text, job_title):
 
 def generate_question_from_skill(skill):
     embed = embed_text(skill)
+    if embed is None:
+        return "Sorry, couldn't generate a question due to missing embedding."
     namespace = session.get("namespace", "interview")
     pinecone_results = pinecone_index.query(
         vector=embed,
@@ -138,7 +130,7 @@ def evaluate_answer(answer_text):
     """
     try:
         response = ollama_chat(eval_prompt)
-        cleaned = response.strip().strip("` ")
+        cleaned = response.strip().strip(" ")
         if cleaned.startswith("json"):
             cleaned = cleaned.replace("json", "").strip()
         return json.loads(cleaned)
@@ -175,14 +167,11 @@ def upload_resume():
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
     file.save(filepath)
 
-    if file.filename.endswith('.pdf'):
-        text = extract_text_from_pdf(filepath)
-    else:
-        text = open(filepath, 'r', encoding='utf-8').read()
-
+    text = extract_text_from_pdf(filepath) if file.filename.endswith('.pdf') else open(filepath, 'r', encoding='utf-8').read()
     embedding = embed_text(text)
+    if embedding is None:
+        return jsonify({"status": "error", "message": "Embedding failed (empty or all-zero vector)."}), 400
 
-    # Use a unique namespace for this resume
     namespace_id = str(uuid.uuid4())
     session['namespace'] = namespace_id
 
@@ -231,20 +220,12 @@ def next_question():
 
     if question_count >= 5:
         summary = calculate_summary_score(session.get('transcript', []))
-        return jsonify({
-            "done": True,
-            "message": "Thanks for taking the interview!",
-            "summary": summary
-        })
+        return jsonify({"done": True, "message": "Thanks for taking the interview!", "summary": summary})
 
     flat_skills = [(cat, skill) for cat, lst in skill_dict.items() for skill in lst if skill not in asked_skills]
     if not flat_skills:
         summary = calculate_summary_score(session.get('transcript', []))
-        return jsonify({
-            "done": True,
-            "message": "Thanks for taking the interview!",
-            "summary": summary
-        })
+        return jsonify({"done": True, "message": "Thanks for taking the interview!", "summary": summary})
 
     cat, next_skill = random.choice(flat_skills)
     asked_skills.append(next_skill)
@@ -253,25 +234,23 @@ def next_question():
     session['last_question'] = q
     session['question_count'] = question_count + 1
 
-    return jsonify({
-        "done": False,
-        "question": q,
-        "evaluation": evaluation
-    })
+    return jsonify({"done": False, "question": q, "evaluation": evaluation})
 
 @app.route('/admin', methods=['GET', 'POST'])
 def admin_panel():
     if request.method == 'POST':
         skill = request.form['skill']
         question = request.form['question']
-        pinecone_index.upsert(
-            vectors=[{
-                "id": f"{skill}-{random.randint(1000,9999)}",
-                "values": embed_text(question),
-                "metadata": {"text": question, "source": "admin-upload"}
-            }],
-            namespace="interview"
-        )
+        embed = embed_text(question)
+        if embed:
+            pinecone_index.upsert(
+                vectors=[{
+                    "id": f"{skill}-{random.randint(1000,9999)}",
+                    "values": embed,
+                    "metadata": {"text": question, "source": "admin-upload"}
+                }],
+                namespace="interview"
+            )
         return redirect('/admin')
 
     return '''
@@ -286,5 +265,3 @@ def admin_panel():
 
 if __name__ == '__main__':
     app.run(debug=True)
-
-
