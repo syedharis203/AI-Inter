@@ -65,39 +65,15 @@ def ollama_chat(prompt):
         return f"[Ollama chat error: {str(e)}]"
 
 def embed_text(text):
-    if not text.strip():
-        print("Warning: Attempted to embed empty text. Returning zero vector.")
-        return [0.0] * 1024
-
     try:
         res = requests.post(
             f"{OLLAMA_BASE_URL}/api/embeddings",
-            json={"model": OLLAMA_EMBED_MODEL, "prompt": text},
-            timeout=50 # Added timeout
+            json={"model": OLLAMA_EMBED_MODEL, "prompt": text}
         )
-        res.raise_for_status()
-        response_data = res.json()
-        if 'embedding' in response_data and response_data['embedding']:
-            if any(val != 0.0 for val in response_data['embedding']):
-                return response_data['embedding']
-            else:
-                print(f"Warning: Ollama returned an all-zero embedding for text. Text snippet: '{text[:50]}...'")
-                return [0.0] * 1024
-        else:
-            print(f"Error: Ollama response missing 'embedding' key or it's empty. Response: {response_data}")
-            return [0.0] * 1024
-
-    except requests.exceptions.RequestException as req_e:
-        print(f"Network or Ollama service error during embedding: {req_e}")
-        return [0.0] * 1024
-    except json.JSONDecodeError as json_e:
-        print(f"JSON decoding error from Ollama response: {json_e}")
-        print(f"Raw response: {res.text if 'res' in locals() else 'No response object'}")
-        return [0.0] * 1024
+        return res.json()['embedding']
     except Exception as e:
-        print(f"An unexpected error occurred during embedding: {e}")
         return [0.0] * 1024
-
+        
 def extract_skills_with_ollama(resume_text, job_title):
     prompt = f"""
     Analyze this resume and extract the candidate's key technical skills.
