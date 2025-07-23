@@ -27,7 +27,7 @@ if index_name not in pc.list_indexes().names():
 pinecone_index = pc.Index(index_name)
 
 # --- Gemini Setup ---
-genai.configure(api_key="AIzaSyCpQvZUGclZCnL18Wh0fz_mqQDT6-_CBLE")
+genai.configure(api_key="AIzaSyDmRo4aJCLsuhoPugitf11hiioFuJq5Ay8")
 # --- Helper Functions ---
 def extract_text_from_pdf(path):
     text = ""
