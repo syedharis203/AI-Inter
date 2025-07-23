@@ -50,7 +50,7 @@ No extra config is required the app.py is already pre-configured to use:
 
 Gemini models for embedding and chat model.
 
-Pinecone index named reg with dimension 768 and namespace interview
+Pinecone index with defined credentials
 
 Run the Application
 
