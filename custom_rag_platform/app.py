@@ -1,8 +1,10 @@
 from flask import Flask, request, render_template, jsonify, session, redirect
 import os
+import uuid
 import pdfplumber
 import requests
 import json
+from pinecone import Pinecone, ServerlessSpec
 import random
 
 # --- Flask Setup ---
@@ -11,9 +13,18 @@ app.secret_key = "super-secret-key"
 app.config['UPLOAD_FOLDER'] = 'uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-# --- Qdrant Setup ---
-QDRANT_URL = "http://20.244.96.62:6333"
-COLLECTION_NAME = "rag"
+# --- Pinecone Setup ---
+pc = Pinecone(api_key="pcsk_dH9vJ_3JrrNAHeGANYsmWDtv6gy6nXWkCuHBRh2dRXFs7ewn31ifjDYtnWWqzHaGkGwyW")
+index_name = "rag"
+
+if index_name not in pc.list_indexes().names():
+    pc.create_index(
+        name=index_name,
+        dimension=1024,
+        metric="cosine",
+        spec=ServerlessSpec(cloud="aws", region="us-east-1")
+    )
+pinecone_index = pc.Index(index_name)
 
 # --- Ollama Setup ---
 OLLAMA_BASE_URL = "https://ai.thecodehub.digital"
@@ -40,7 +51,6 @@ def ollama_chat(prompt):
             json={"model": OLLAMA_CHAT_MODEL, "messages": [{"role": "user", "content": prompt}]},
             stream=True
         )
-
         full_response = ""
         for line in res.iter_lines():
             if line:
@@ -50,7 +60,6 @@ def ollama_chat(prompt):
                         full_response += data["message"]["content"]
                 except json.JSONDecodeError:
                     continue
-
         return full_response.strip() or "[Ollama chat error: Empty response]"
     except Exception as e:
         return f"[Ollama chat error: {str(e)}]"
@@ -64,25 +73,6 @@ def embed_text(text):
         return res.json()['embedding']
     except Exception as e:
         return [0.0] * 1024
-
-def qdrant_upsert(id, embedding, metadata):
-    payload = {
-        "points": [{
-            "id": id,
-            "vector": embedding,
-            "payload": metadata
-        }]
-    }
-    requests.put(f"{QDRANT_URL}/collections/{COLLECTION_NAME}/points", json=payload)
-
-def qdrant_query(vector, top_k=5):
-    payload = {
-        "vector": vector,
-        "top": top_k,
-        "with_payload": True
-    }
-    res = requests.post(f"{QDRANT_URL}/collections/{COLLECTION_NAME}/points/search", json=payload)
-    return res.json().get("result", [])
 
 def extract_skills_with_ollama(resume_text, job_title):
     prompt = f"""
@@ -113,8 +103,14 @@ def extract_skills_with_ollama(resume_text, job_title):
 
 def generate_question_from_skill(skill):
     embed = embed_text(skill)
-    qdrant_results = qdrant_query(embed)
-    context_chunks = [m['payload']['text'] for m in qdrant_results if 'text' in m['payload']]
+    namespace = session.get("namespace", "interview")
+    pinecone_results = pinecone_index.query(
+        vector=embed,
+        top_k=5,
+        include_metadata=True,
+        namespace=namespace
+    )
+    context_chunks = [m['metadata']['text'] for m in pinecone_results['matches'] if 'text' in m['metadata']]
     context_text = "\n\n".join(context_chunks)
 
     prompt = f"""
@@ -152,7 +148,6 @@ def evaluate_answer(answer_text):
 def calculate_summary_score(transcript):
     if not transcript:
         return {"avg_score": 0, "ai_count": 0, "human_count": 0}
-
     total_score = 0
     ai_like = 0
     human_like = 0
@@ -165,7 +160,6 @@ def calculate_summary_score(transcript):
             ai_like += 1
         elif "human" in label:
             human_like += 1
-
     avg = round(total_score / len(transcript), 1)
     return {"avg_score": avg, "ai_count": ai_like, "human_count": human_like}
 
@@ -187,10 +181,18 @@ def upload_resume():
         text = open(filepath, 'r', encoding='utf-8').read()
 
     embedding = embed_text(text)
-    qdrant_upsert(
-        id=file.filename,
-        embedding=embedding,
-        metadata={"text": text, "source": "resume", "job_title": job_title}
+
+    # Use a unique namespace for this resume
+    namespace_id = str(uuid.uuid4())
+    session['namespace'] = namespace_id
+
+    pinecone_index.upsert(
+        vectors=[{
+            "id": file.filename,
+            "values": embedding,
+            "metadata": {"text": text, "source": "resume", "job_title": job_title}
+        }],
+        namespace=namespace_id
     )
 
     extracted_skills = extract_skills_with_ollama(text, job_title)
@@ -262,10 +264,13 @@ def admin_panel():
     if request.method == 'POST':
         skill = request.form['skill']
         question = request.form['question']
-        qdrant_upsert(
-            id=f"{skill}-{random.randint(1000,9999)}",
-            embedding=embed_text(question),
-            metadata={"text": question, "source": "admin-upload"}
+        pinecone_index.upsert(
+            vectors=[{
+                "id": f"{skill}-{random.randint(1000,9999)}",
+                "values": embed_text(question),
+                "metadata": {"text": question, "source": "admin-upload"}
+            }],
+            namespace="interview"
         )
         return redirect('/admin')
 
@@ -281,4 +286,5 @@ def admin_panel():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
 
